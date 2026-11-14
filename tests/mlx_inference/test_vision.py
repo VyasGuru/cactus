@@ -7,7 +7,7 @@ from PIL import Image
 from cactus.mlx.vision import ImageProcessor, resize_bicubic
 from cactus.mlx.models.nemotron_vision import pixel_shuffle, resize_positions
 from cactus.mlx.models.nemotron_speculative import MTPDecoder
-from cactus.mlx.models.nemotron import CQModel
+from cactus.mlx.models.nemotron import CQModel, _image_token_id
 
 
 def test_image_expansion_keeps_image_order_and_token_counts():
@@ -23,12 +23,21 @@ def test_image_expansion_keeps_image_order_and_token_counts():
 
 
 def test_embedding_merge_preserves_text_and_replaces_only_image_rows():
+    image_token = 23
     model = SimpleNamespace(backbone=SimpleNamespace(embeddings=lambda ids: mx.repeat(ids[:, None], 4, axis=1)),
-                            _vision=lambda pixels: mx.full((2, 4), 99))
-    merged = CQModel.embed_inputs(model, mx.array([1, 18, 18, 2]), pixel_values=[np.zeros((3, 32, 64))])
+                            _vision=lambda pixels: mx.full((2, 4), 99), _image_token_id=image_token)
+    merged = CQModel.embed_inputs(model, mx.array([1, image_token, image_token, 2]),
+                                  pixel_values=[np.zeros((3, 32, 64))])
     np.testing.assert_array_equal(merged, [[1]*4, [99]*4, [99]*4, [2]*4])
     with pytest.raises(ValueError, match='token count'):
-        CQModel.embed_inputs(model, mx.array([1, 18, 2]), pixel_values=[np.zeros((3, 32, 64))])
+        CQModel.embed_inputs(model, mx.array([1, image_token, 2]), pixel_values=[np.zeros((3, 32, 64))])
+
+
+def test_image_token_id_comes_from_config_with_legacy_fallback():
+    assert _image_token_id({'img_context_token_id': 23}) == 23
+    assert _image_token_id({'image_token_index': 24}) == 24
+    assert _image_token_id({'image_token_id': 25}) == 25
+    assert _image_token_id({}) == 18
 
 
 def bicubic_weight(x):

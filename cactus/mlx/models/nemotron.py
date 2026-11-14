@@ -17,6 +17,7 @@ class CQModel(Model):
     def __init__(self, args):
         super().__init__(args)
         self._decode_graph = None
+        self._image_token_id = 18
 
     def __call__(self, inputs, cache=None, input_embeddings=None):
         if input_embeddings is not None:
@@ -76,7 +77,7 @@ class CQModel(Model):
             from .nemotron_vision import load_vision
             self._vision = load_vision(self._model_file)
         features = mx.concatenate([self._vision(mx.array(pixels)) for pixels in pixel_values])
-        positions = np.flatnonzero(np.asarray(tokens) == 18)
+        positions = np.flatnonzero(np.asarray(tokens) == self._image_token_id)
         if len(positions) != features.shape[0]:
             raise ValueError('Image token count does not match the encoded image patches')
         embeddings[mx.array(positions)] = features.astype(embeddings.dtype)
@@ -97,6 +98,13 @@ def locate(model, path):
     return target, parts[-1]
 
 
+def _image_token_id(config):
+    for key in ('img_context_token_id', 'image_token_index', 'image_token_id'):
+        if config.get(key) is not None:
+            return config[key]
+    return 18
+
+
 def load(model_file, config_file, progress=None):
     start = time.perf_counter()
     checkpoint = Checkpoint(model_file)
@@ -106,6 +114,7 @@ def load(model_file, config_file, progress=None):
         config['time_step_limit'][1] = float('inf')
     args = ModelArgs.from_dict(config)
     model = CQModel(args)
+    model._image_token_id = _image_token_id(config)
     model._model_file = str(model_file)
     model._mtp = None
     model._vision = None
